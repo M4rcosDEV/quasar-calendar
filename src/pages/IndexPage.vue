@@ -3,17 +3,79 @@
     <div class="col column q-pa-md">
       
       <div class="row items-center justify-between q-mb-md bg-white q-pa-sm rounded-borders shadow-1">
-        <div class="text-h6 text-weight-bold text-dark row items-center">
-          <q-icon name="calendar_month" class="q-mr-sm" color="primary" />
-          Agenda Semanal
+        <div class="row items-center">
+          <q-icon name="calendar_month" class="q-mr-sm" color="primary" size="24px" />
+          <div>
+            <div class="text-h6 text-weight-bold text-dark" style="line-height: 1;">Agenda Semanal</div>
+            <div class="text-caption text-grey-6">Semana de 20 a 26 de Abril, 2026</div>
+          </div>
         </div>
-        <div class="text-subtitle2 text-grey-6">
-          Semana de 20 de Abril, 2026
-        </div>
+        
+        <q-btn-toggle
+          v-model="viewMode"
+          toggle-color="primary"
+          color="grey-2"
+          text-color="grey-8"
+          unelevated
+          rounded
+          class="shadow-1"
+          :options="[
+            { label: 'Horários', value: 'hourly', icon: 'schedule' },
+            { label: 'Períodos', value: 'period', icon: 'date_range' }
+          ]"
+        />
       </div>
 
       <div class="col bg-white rounded-borders shadow-1 overflow-hidden flex">
+        
+        <div v-if="viewMode === 'period'" class="full-width full-height column">
+          <div class="bg-grey-2 q-pa-sm border-bottom text-weight-bold text-grey-8 row items-center">
+            <q-icon name="info" class="q-mr-sm" /> 
+            Exibindo apenas agendamentos de múltiplos dias (Cursos, Retiros, Férias)
+          </div>
+          
+          <div class="row flex-center border-bottom bg-white" style="height: 60px;">
+             <div v-for="(day, index) in weekDates" :key="`header-${day}`" class="col text-center border-right">
+                <div class="text-caption text-uppercase text-weight-bold text-grey-5">{{ getWeekdayName(index) }}</div>
+                <div class="text-h6 text-weight-bolder" :class="isToday(day) ? 'text-primary' : 'text-dark'">
+                  {{ day.split('-')[2] }}
+                </div>
+             </div>
+          </div>
+
+          <div class="row col bg-grey-1 relative-position">
+            <div 
+              v-for="day in weekDates" 
+              :key="day" 
+              class="col border-right q-pa-sm column q-gutter-y-sm"
+            >
+              <template v-for="ev in getPeriodEventsForDate(day)" :key="ev.id">
+                <q-card 
+                  flat 
+                  class="period-card cursor-pointer" 
+                  :style="{ borderLeft: `4px solid ${ev.theme.solid}`, backgroundColor: ev.theme.light }"
+                  @click="openDetail(ev.appointment)"
+                >
+                  <q-card-section class="q-pa-sm">
+                    <div class="text-weight-bold text-dark ellipsis" style="font-size: 0.85rem;">{{ ev.appointment.clientName }}</div>
+                    <div class="text-caption text-grey-8 ellipsis">{{ ev.appointment.service }}</div>
+                    <div class="row items-center q-mt-xs text-grey-6" style="font-size: 0.7rem;">
+                      <q-icon name="event" size="12px" class="q-mr-xs" />
+                      {{ ev.appointment.startDate.split('-')[2] }}/{{ ev.appointment.startDate.split('-')[1] }} até {{ ev.appointment.endDate.split('-')[2] }}/{{ ev.appointment.endDate.split('-')[1] }}
+                    </div>
+                  </q-card-section>
+                </q-card>
+              </template>
+              
+              <div v-if="getPeriodEventsForDate(day).length === 0" class="text-center text-grey-4 q-mt-md text-caption">
+                Livre
+              </div>
+            </div>
+          </div>
+        </div>
+
         <q-calendar-day
+          v-else
           v-model="selectedDate"
           view="week"
           locale="pt-BR"
@@ -25,11 +87,13 @@
           no-active-date
           animated
           bordered
-          class="scheduler-calendar col"
+          class="scheduler-calendar full-width full-height"
         >
           <template #head-day-label="{ scope }">
             <div class="column items-center q-py-sm">
-              <div class="text-caption text-uppercase text-weight-bold text-grey-5">{{ scope.timestamp.weekdayName }}</div>
+              <div class="text-caption text-uppercase text-weight-bold text-grey-5">
+                {{ scope.timestamp.weekdayName }}
+              </div>
               <div 
                 class="text-h5 text-weight-bolder q-mt-xs q-mb-xs flex flex-center" 
                 :class="isToday(scope.timestamp.date) ? 'today-badge' : 'text-dark'"
@@ -40,7 +104,6 @@
           </template>
 
           <template #day-body="{ scope }">
-            
             <div 
               v-if="isToday(scope.timestamp.date) && isWorkingHours" 
               class="current-time-line"
@@ -49,9 +112,9 @@
               <div class="time-dot"></div>
             </div>
 
-            <template v-for="ev in getEventsForDate(scope.timestamp.date)" :key="ev.id">
+            <template v-for="ev in getTimedEventsForDate(scope.timestamp.date)" :key="ev.id">
               <div
-                class="event-card"
+                class="event-card shadow-2"
                 :class="{ 'event-compact': ev.isCompact }"
                 :style="getEventStyle(ev)"
                 @click.stop="openDetail(ev.appointment)"
@@ -106,9 +169,12 @@
     <q-dialog v-model="detailDialog">
       <q-card style="width: 350px; border-radius: 12px;">
          <q-card-section class="row items-center">
-            <div class="text-h6">Agendamento</div>
+            <div class="text-h6">Detalhes do Agendamento</div>
             <q-space />
             <q-btn icon="close" flat round dense v-close-popup />
+         </q-card-section>
+         <q-card-section class="q-pt-none text-center text-grey-8">
+            (Integração do agendamento aqui)
          </q-card-section>
       </q-card>
     </q-dialog>
@@ -120,7 +186,7 @@ import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useQuasar } from "quasar";
 import { QCalendarDay } from "@quasar/quasar-ui-qcalendar";
 
-// ─── Tipos ────────────────────────────────────────────────────────────────────
+// ─── Tipos e Interfaces ───────────────────────────────────────────────────────
 type AppointmentStatus = "confirmado" | "pendente" | "cancelado" | "concluido";
 
 interface Appointment {
@@ -128,7 +194,8 @@ interface Appointment {
   clientName: string;
   clientPhone: string;
   status: AppointmentStatus;
-  date: string;
+  startDate: string;
+  endDate: string;
   startTime: string;
   endTime: string;
   service: string;
@@ -140,46 +207,60 @@ interface ThemeColor {
 }
 
 interface CalendarEventView {
-  id: number;
+  id: string;
   duration: number;
   theme: ThemeColor;
   appointment: Appointment;
-  top: number;
-  height: number;
-  left: number;
-  width: number;
-  isCompact: boolean;
-  zIndex: number;
-}
-
-// ─── Paleta de Cores (Estilo Soft/Pastel) ─────────────────────────────────────
-const SERVICE_THEMES: Record<string, ThemeColor> = {
-  "Corte + Escova": { solid: "#3b82f6", light: "#eff6ff" }, // Azul
-  "Barba": { solid: "#0ea5e9", light: "#f0f9ff" },          // Cyan
-  "Coloração + Hidratação": { solid: "#a855f7", light: "#faf5ff" }, // Roxo
-  "Corte Masculino": { solid: "#10b981", light: "#ecfdf5" }, // Verde
-  "Manicure + Pedicure": { solid: "#f43f5e", light: "#fff1f2" }, // Rosa/Vermelho
-};
-
-function getServiceTheme(service: string): ThemeColor {
-  return SERVICE_THEMES[service] ?? { solid: "#64748b", light: "#f8fafc" }; // Slate default
+  top?: number;
+  height?: number;
+  left?: number;
+  width?: number;
+  isCompact?: boolean;
+  zIndex?: number;
+  date: string;
 }
 
 // ─── Estado da Aplicação ──────────────────────────────────────────────────────
 const $q = useQuasar();
 const selectedDate = ref("2026-04-20");
 const detailDialog = ref(false);
+const viewMode = ref<"hourly" | "period">("hourly");
 
+const weekDates = [
+  "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", 
+  "2026-04-24", "2026-04-25", "2026-04-26"
+];
+
+// ─── Paleta de Cores ──────────────────────────────────────────────────────────
+const SERVICE_THEMES: Record<string, ThemeColor> = {
+  "Corte + Escova": { solid: "#3b82f6", light: "#eff6ff" },
+  "Barba": { solid: "#0ea5e9", light: "#f0f9ff" },
+  "Coloração + Hidratação": { solid: "#a855f7", light: "#faf5ff" },
+  "Corte Masculino": { solid: "#10b981", light: "#ecfdf5" },
+  "Manicure + Pedicure": { solid: "#f43f5e", light: "#fff1f2" },
+  "Retiro / Curso": { solid: "#f59e0b", light: "#fffbeb" },
+};
+
+function getServiceTheme(service: string): ThemeColor {
+  return SERVICE_THEMES[service] ?? { solid: "#64748b", light: "#f8fafc" };
+}
+
+// ─── Dados Fakes (Com Conflitos de Horário) ──────────────────────────────────
 const appointments = ref<Appointment[]>([
-  { id: 1, clientName: "Ana Silva", clientPhone: "(11) 98765-4321", status: "confirmado", date: "2026-04-20", startTime: "09:00", endTime: "10:00", service: "Corte + Escova" },
-  { id: 2, clientName: "Carlos Mendes", clientPhone: "(11) 91234-5678", status: "pendente", date: "2026-04-20", startTime: "10:30", endTime: "10:45", service: "Barba" },
-  { id: 3, clientName: "Mariana Costa", clientPhone: "(21) 99876-5432", status: "confirmado", date: "2026-04-21", startTime: "14:00", endTime: "16:30", service: "Coloração + Hidratação" },
-  { id: 4, clientName: "Roberto Alves", clientPhone: "(11) 97654-3210", status: "cancelado", date: "2026-04-21", startTime: "09:00", endTime: "09:30", service: "Corte Masculino" },
-  { id: 5, clientName: "Fernanda Lima", clientPhone: "(31) 98888-7777", status: "concluido", date: "2026-04-22", startTime: "11:00", endTime: "12:30", service: "Manicure + Pedicure" },
+  // 🔴 GRADE: Choque de Horários para demonstração na Segunda (20/04/2026)
+  { id: 1, clientName: "Ana Silva", clientPhone: "(11) 98765-4321", status: "confirmado", startDate: "2026-04-20", endDate: "2026-04-20", startTime: "09:00", endTime: "10:30", service: "Corte + Escova" },
+  { id: 2, clientName: "Carlos Mendes", clientPhone: "(11) 91234-5678", status: "pendente", startDate: "2026-04-20", endDate: "2026-04-20", startTime: "09:30", endTime: "11:00", service: "Barba" },
+  { id: 3, clientName: "João Pedro", clientPhone: "(11) 97654-3210", status: "cancelado", startDate: "2026-04-20", endDate: "2026-04-20", startTime: "09:15", endTime: "10:00", service: "Corte Masculino" },
+  
+  // Evento normal em outro dia
+  { id: 4, clientName: "Roberto Alves", clientPhone: "(11) 97654-3210", status: "cancelado", startDate: "2026-04-21", endDate: "2026-04-21", startTime: "14:00", endTime: "14:45", service: "Corte Masculino" },
+  
+  // 🗓️ PERÍODOS: Múltiplos dias
+  { id: 5, clientName: "Treinamento Interno", clientPhone: "-", status: "confirmado", startDate: "2026-04-21", endDate: "2026-04-23", startTime: "08:00", endTime: "18:00", service: "Retiro / Curso" },
+  { id: 6, clientName: "Reforma Loja", clientPhone: "-", status: "confirmado", startDate: "2026-04-25", endDate: "2026-04-26", startTime: "08:00", endTime: "22:00", service: "Retiro / Curso" },
 ]);
 
-// ─── Lógica da Linha do Tempo (Current Time) ──────────────────────────────────
-// Neste exemplo, usamos a data e hora atual do sistema do usuário
+// ─── Lógica da Linha do Tempo ─────────────────────────────────────────────────
 const currentTimeTop = ref(0);
 const isWorkingHours = ref(true);
 let timeInterval: ReturnType<typeof setInterval>;
@@ -188,80 +269,163 @@ function updateCurrentTime() {
   const now = new Date();
   const h = now.getHours();
   const m = now.getMinutes();
-  
-  // Se estiver fora do horário de funcionamento (antes das 8h ou depois das 22h), esconde
   if (h < 8 || h >= 22) {
     isWorkingHours.value = false;
     return;
   }
-  
   isWorkingHours.value = true;
-  // O calendário começa às 8h. Cada hora tem a altura configurada em :interval-height (65px)
-  // Cálculo: (Hora atual - 8) * 65 + (Minutos / 60) * 65
   currentTimeTop.value = ((h - 8) * 65) + ((m / 60) * 65);
 }
 
 onMounted(() => {
   updateCurrentTime();
-  timeInterval = setInterval(updateCurrentTime, 60000); // Atualiza a cada 1 minuto
+  timeInterval = setInterval(updateCurrentTime, 60000); 
 });
 
-onUnmounted(() => {
-  clearInterval(timeInterval);
-});
+onUnmounted(() => { clearInterval(timeInterval); });
 
-// ─── Helpers de Formatação ────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 function parseTime(timeStr: string): { h: number; m: number } {
   if (!timeStr) return { h: 0, m: 0 };
   const parts = timeStr.split(":");
   return { h: Number(parts[0]) || 0, m: Number(parts[1]) || 0 };
 }
-
-function getInitial(name: string): string {
-  return name ? name.charAt(0).toUpperCase() : "?";
-}
-
+function getInitial(name: string): string { return name ? name.charAt(0).toUpperCase() : "?"; }
 function getFirstName(fullName: string): string {
   if (!fullName) return "";
-
-  let name = fullName.trim().split(" ")[0];
-  return name || fullName; // Retorna o primeiro nome ou o nome completo se for apenas um
+  return fullName.trim().split(" ")[0] || fullName;
+}
+function getDatesInRange(startDate: string, endDate: string): string[] {
+  const dates = [];
+  let current = new Date(`${startDate}T12:00:00`); 
+  const end = new Date(`${endDate}T12:00:00`);
+  while (current <= end) {
+    dates.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 1);
+  }
+  return dates;
+}
+function getWeekdayName(index: number): string {
+  const days = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
+  return days[index] || "";
 }
 
-// ─── Motor de Layout (Computado) ──────────────────────────────────────────────
-const processedEvents = computed(() => {
-  return appointments.value.map((app, index) => {
-    const start = parseTime(app.startTime);
-    const end = parseTime(app.endTime);
-    
-    const durationMins = (end.h * 60 + end.m) - (start.h * 60 + start.m);
-    
-    // Atenção: O Multiplicador deve ser (65 / 60) porque o interval-height agora é 65
-    // Para manter a proporção exata dos minutos em pixels:
-    const pixelsPerMinute = 65 / 60; 
-    
-    const duration = durationMins * pixelsPerMinute;
-    const top = ((start.h - 8) * 60 + start.m) * pixelsPerMinute;
+// ─── Motor Matemático de Renderização ─────────────────────────────────────────
 
-    return {
-      id: app.id,
-      duration: durationMins,
-      theme: getServiceTheme(app.service),
-      appointment: app,
-      top,
-      height: Math.max(duration, 26), // Altura mínima garantida
-      left: 0, 
-      width: 96, // Deixa um pequeno respiro do lado direito
-      isCompact: durationMins <= 30,
-      zIndex: 10 + index
-    } as CalendarEventView;
-  });
+const periodEvents = computed(() => {
+  return appointments.value
+    .filter(app => app.startDate !== app.endDate)
+    .flatMap(app => {
+      return getDatesInRange(app.startDate, app.endDate).map(date => ({
+        id: `${app.id}-${date}`,
+        date,
+        duration: 0,
+        theme: getServiceTheme(app.service),
+        appointment: app
+      } as CalendarEventView));
+    });
 });
 
-// ─── Funções de Controle da View ──────────────────────────────────────────────
-function getEventsForDate(date: string): CalendarEventView[] {
-  return processedEvents.value.filter((ev) => ev.appointment.date === date);
-}
+const timedEvents = computed(() => {
+  const sameDayApps = appointments.value.filter(app => app.startDate === app.endDate);
+  const byDate: Record<string, typeof sameDayApps> = {};
+  
+  sameDayApps.forEach(app => {
+    if (!byDate[app.startDate]) byDate[app.startDate] = [];
+    byDate[app.startDate].push(app);
+  });
+
+  const processed: CalendarEventView[] = [];
+
+  for (const date in byDate) {
+    let dailyApps = byDate[date];
+
+    // Mapeamento em minutos para fácil verificação de colisão matemática
+    const mappedApps = dailyApps.map(app => {
+      const start = parseTime(app.startTime);
+      const end = parseTime(app.endTime);
+      return { 
+        app, 
+        startMins: start.h * 60 + start.m, 
+        endMins: end.h * 60 + end.m 
+      };
+    });
+
+    // Passo 1: Organizar do mais cedo para o mais tarde
+    mappedApps.sort((a, b) => {
+      if (a.startMins === b.startMins) return b.endMins - a.endMins;
+      return a.startMins - b.startMins;
+    });
+
+    // Passo 2: Separar em "Clusters" (Grupos de eventos que se sobrepõem no tempo)
+    let clusters: any[][] = [];
+    let currentCluster: any[] = [];
+    let clusterEnd = 0;
+
+    mappedApps.forEach(item => {
+      if (currentCluster.length === 0) {
+        currentCluster.push(item);
+        clusterEnd = item.endMins;
+      } else {
+        if (item.startMins < clusterEnd) {
+          currentCluster.push(item);
+          clusterEnd = Math.max(clusterEnd, item.endMins); // Expande o alcance do cluster
+        } else {
+          clusters.push(currentCluster);
+          currentCluster = [item];
+          clusterEnd = item.endMins;
+        }
+      }
+    });
+    if (currentCluster.length > 0) clusters.push(currentCluster);
+
+    // Passo 3: Dentro de cada cluster, organizar em Colunas visuais
+    clusters.forEach(cluster => {
+      const columns: number[] = []; // Guarda a que horas a última tarefa terminou em cada coluna
+
+      cluster.forEach(item => {
+        // Tenta achar a primeira coluna cujo evento já terminou antes de este começar
+        let colIndex = columns.findIndex(colEndTime => item.startMins >= colEndTime);
+        
+        if (colIndex === -1) { // Se não tem coluna vazia, cria uma nova
+          colIndex = columns.length;
+          columns.push(item.endMins);
+        } else {
+          columns[colIndex] = item.endMins;
+        }
+        item.colIndex = colIndex;
+      });
+
+      const numCols = columns.length;
+      // Define a largura baseada na quantidade máxima de eventos concorrentes neste bloco (deixando 1% pra respiro)
+      const colWidth = (96 / numCols) - 1; 
+
+      cluster.forEach((item, index) => {
+        const durationMins = item.endMins - item.startMins;
+        const pixelsPerMinute = 65 / 60; // 65px de altura por hora 
+
+        processed.push({
+          id: String(item.app.id),
+          date: item.app.startDate,
+          duration: durationMins,
+          theme: getServiceTheme(item.app.service),
+          appointment: item.app,
+          top: (item.startMins - (8 * 60)) * pixelsPerMinute, // Base 8h
+          height: Math.max(durationMins * pixelsPerMinute, 26), 
+          left: (item.colIndex * (96 / numCols)), // Posição calculada baseada na coluna
+          width: colWidth, 
+          isCompact: durationMins <= 30,
+          zIndex: 10 + index
+        } as CalendarEventView);
+      });
+    });
+  }
+
+  return processed;
+});
+
+function getPeriodEventsForDate(date: string) { return periodEvents.value.filter(ev => ev.date === date); }
+function getTimedEventsForDate(date: string) { return timedEvents.value.filter(ev => ev.date === date); }
 
 function getEventStyle(ev: CalendarEventView): Record<string, string> {
   return {
@@ -278,44 +442,40 @@ function getEventStyle(ev: CalendarEventView): Record<string, string> {
     borderRadius: "6px",
     zIndex: `${ev.zIndex}`,
     cursor: "pointer",
-    transition: "transform 0.2s ease, box-shadow 0.2s ease"
   };
 }
 
-function openDetail(app: Appointment) {
-  detailDialog.value = true;
-}
-
-function isToday(date: string): boolean {
-  // Para fins de teste com seus dados de "2026", estou forçando o dia "2026-04-20" a ser "hoje"
-  // Em produção, use a lógica real comentada abaixo:
-  /*
-  const t = new Date();
-  const todayStr = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
-  return date === todayStr;
-  */
-  return date === "2026-04-20"; 
-}
+function openDetail(app: Appointment) { detailDialog.value = true; }
+function isToday(date: string): boolean { return date === "2026-04-20"; }
 </script>
 
 <style scoped>
 /* Oculta scrollbars indesejadas no Quasar Calendar */
 .scheduler-calendar {
-  height: calc(100vh - 120px);
-  min-height: 600px;
+  min-height: 500px;
 }
 
-/* Animação de Hover nos Cards */
+/* ─── CARDS NA VISÃO DE PERÍODO ─── */
+.period-card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.period-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+}
+
+/* ─── EVENTOS NA GRADE DE HORÁRIOS ─── */
 .event-card {
   overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 .event-card:hover {
-  transform: scale(1.01) translateX(2px);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+  transform: scale(1.02);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15) !important;
   z-index: 50 !important;
 }
 
-/* Estilo do dia atual no cabeçalho */
+/* ─── HEADER DIAS ─── */
 .today-badge {
   background-color: var(--q-primary);
   color: white;
@@ -325,15 +485,15 @@ function isToday(date: string): boolean {
   box-shadow: 0 2px 4px rgba(0,0,0,0.2);
 }
 
-/* 🔴 LINHA DO TEMPO (Current Time Indicator) */
+/* ─── LINHA DO TEMPO ─── */
 .current-time-line {
   position: absolute;
   left: 0;
   right: 0;
   height: 2px;
-  background-color: #ea4335; /* Vermelho estilo Google */
+  background-color: #ea4335;
   z-index: 100;
-  pointer-events: none; /* Ignora cliques para não atrapalhar os eventos */
+  pointer-events: none;
 }
 .time-dot {
   position: absolute;
@@ -344,4 +504,8 @@ function isToday(date: string): boolean {
   background-color: #ea4335;
   border-radius: 50%;
 }
+
+/* ─── UTILITÁRIOS ─── */
+.border-right { border-right: 1px solid rgba(0,0,0,0.08); }
+.border-bottom { border-bottom: 1px solid rgba(0,0,0,0.08); }
 </style>
